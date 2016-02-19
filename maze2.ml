@@ -1,14 +1,16 @@
 
 (* compile with: ocamlopt -o maze.exe graphics.cmxa unix.cmxa maze.ml
+ * 
+ * http://www.conwaylife.com/w/index.php?title=Maze 
  *)
 
-(* http://www.conwaylife.com/w/index.php?title=Maze *)
+let artifex = "PETRVS·PAVLVS·NEPTVNENSIS·ME·FECIT·MMXVI";;
 
-let version = "2.3";;
-
-open Graphics;;
+let version = "2.4";;
 
 let verbose = ref false;;
+
+open Graphics;;
 
 let wrap x y =
   if x < 0 then x + y
@@ -109,10 +111,10 @@ let choose_color k color_step =
 let nap s =
   ignore (Unix.select [] [] [] (max 0.0 s));;
 
-let swap r1 r2 =
-  let temp = !r1 in
-  r1 := !r2;
-  r2 := temp;;
+let swap ref1 ref2 =
+  let temp = !ref1 in
+  ref1 := !ref2;
+  ref2 := temp;;
   
 let maze xdim ydim
          min_neighbours max_neighbours
@@ -121,7 +123,7 @@ let maze xdim ydim
          color_step
          radius init_probability
          framerate_limitator =
-  open_graph (Printf.sprintf " %dx%d" (xdim * enlargement + 22) (ydim * enlargement + 50));
+  open_graph (Printf.sprintf " %dx%d" (xdim * enlargement + 20) (ydim * enlargement + 50));
   set_window_title (Printf.sprintf "Maze %s" version);
   (* resize_window (xdim * enlargement) (ydim * enlargement); *)
   auto_synchronize false;
@@ -142,16 +144,14 @@ let maze xdim ydim
     if !verbose then begin
       let dt = t1 -. t0 in
       Printf.printf
-        "gen %d; %.2f gen/sec; nap/total = %.2fs/%.2fs = %.2f%%\n%!"
-        !gen_counter
-        ((float !gen_counter) /. dt)
-        !napped
-        dt
+        "gen/time = %d/(%.1f s) = %.1f Hz; nap/total = (%.1f s)/(%.1f s) = %.1f%%\n%!"
+        !gen_counter dt ((float !gen_counter) /. dt)
+        !napped dt
         (!napped /. dt *. 100.0)
       end;
     incr gen_counter;
-    gen !m1 !m2 (choose_color color color_step) min_neighbours max_neighbours min_birth max_birth;
     display !m2 enlargement air;
+    gen !m1 !m2 (choose_color color color_step) min_neighbours max_neighbours min_birth max_birth;
     swap m1 m2;
     let tz = t1 +. time_per_frame in
     let ty = Sys.time () in
@@ -182,6 +182,7 @@ let main () =
   let enlargement = ref 4 in
   let color_step = ref 8 in
   let framerate_limitator = ref None in
+  let user_seed = ref None in
   (try
      Arg.parse
        [("-enl", Arg.Int (fun i -> enlargement := i), "enlargement");
@@ -208,13 +209,23 @@ let main () =
                       radius := 5), "set default parameters for maze");
         ("-verbose", Arg.Unit (fun () -> verbose := not !verbose), "flip verbose mode");
         ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "max framerate");
+        ("-seed", Arg.Int (fun s -> user_seed := Some s), "random generator seed");
        ]
        (fun anon -> anons := int_of_string anon :: !anons)
        user_manual
    with
      Failure mess -> print_user_manual_and_die ());
+  
   let start xdim ydim =
-    Random.self_init ();
+    let seed = match !user_seed with
+      | None ->
+         Random.self_init ();
+         Random.bits ()
+     | Some number ->
+        number
+    in
+    Random.init seed;
+    Printf.printf "-seed %d%!" seed;
     maze xdim ydim
          !min_neighbours !max_neighbours
          !min_birth !max_birth
@@ -231,4 +242,3 @@ let main () =
 
 if not !Sys.interactive then
   main ();;
-    
