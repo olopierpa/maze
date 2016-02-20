@@ -22,15 +22,17 @@ let gen m1 m2 color min_neighbours max_neighbours min_birth max_birth =
   let ydim = Array.length m1.(0) in
   let xmax = xdim - 1 in
   let ymax = ydim - 1 in
+  let k = ref 0 in
   for x = 0 to xmax do
     for y = 0 to ymax do
-      let k = ref 0 in
+      k := 0;
       for dx = -1 to 1 do
+        let xx = wrap (x + dx) xdim in
+        let col = m1.(xx) in
         for dy = -1 to 1 do
           if dx <> 0 || dy <> 0 then
-            let xx = wrap (x + dx) xdim in
             let yy = wrap (y + dy) ydim in
-            if m1.(xx).(yy) <> white then
+            if col.(yy) <> white then
               incr k
         done
       done;
