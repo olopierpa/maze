@@ -58,7 +58,7 @@ let init m radius init_probability =
         m.(x).(y) <- black
     done
   done;;
-
+  
 let display m enlargement air =
   let enlargement' = enlargement - air in
   let xmax = Array.length m - 1 in
@@ -69,9 +69,8 @@ let display m enlargement air =
       set_color col.(y);
       fill_rect (x * enlargement) (y * enlargement) enlargement' enlargement'
     done
-  done;
-  synchronize ();;
-  
+  done;;
+
 let incr_index bounds array =
   let rec loop i =
     if i < 0 then
@@ -85,14 +84,14 @@ let incr_index bounds array =
         array.(i) <- succ(x)
       end
   in loop (Array.length array - 1);;
-
+  
 let vec_white = Array.make 3 255;;
-
+  
 let color_init k =
   for i = 0 to 2 do
     k.(i) <- 0
   done;;
-
+  
 let choose_color k color_step =
   let ss = 256 / color_step in
   let bounds = Array.make 3 color_step in
@@ -107,22 +106,23 @@ let choose_color k color_step =
     Printf.printf "choose_color: chosen = 0x%.6x (%d, %d, %d)\n"
                   color k.(0) k.(1) k.(2);
   color;;
-
+  
 let nap s =
   ignore (Unix.select [] [] [] (max 0.0 s));;
-
+  
 let swap ref1 ref2 =
   let temp = !ref1 in
   ref1 := !ref2;
   ref2 := temp;;
-  
+
 let maze xdim ydim
          min_neighbours max_neighbours
          min_birth max_birth
          enlargement air
          color_step
          radius init_probability
-         framerate_limitator =
+         framerate_limitator
+         timekeeping =
   open_graph (Printf.sprintf " %dx%d" (xdim * enlargement + 20) (ydim * enlargement + 50));
   set_window_title (Printf.sprintf "Maze %s" version);
   (* resize_window (xdim * enlargement) (ydim * enlargement); *)
@@ -131,36 +131,45 @@ let maze xdim ydim
   let m1 = ref (Array.make_matrix xdim ydim white) in
   let m2 = ref (Array.make_matrix xdim ydim white) in
   init !m1 radius init_probability;
-  let gen_counter = ref 0 in
   let color = Array.make 3 0 in
-  let time_per_frame =
+  let time_per_frame, user_request_as_verbose_info =
     match framerate_limitator with
-    | None -> 0.0
-    | Some fps -> 1.0 /. fps in
+    | None -> 0.0, ""
+    | Some fps -> 1.0 /. fps, (Printf.sprintf " (%.2f Hz requested)" fps)
+  in
   let napped = ref 0.0 in
   let t0 = Sys.time () in
-  while true do
+  let rec run gen_counter =
     let t1 = Sys.time () in
+    synchronize ();
     if !verbose then begin
       let dt = t1 -. t0 in
-      Printf.printf
-        "gen/time = %d/(%.1f s) = %.1f Hz; nap/total = (%.1f s)/(%.1f s) = %.1f%%\n%!"
-        !gen_counter dt ((float !gen_counter) /. dt)
-        !napped dt
-        (!napped /. dt *. 100.0)
-      end;
-    incr gen_counter;
+      Printf.printf "gen/time = %d/(%.2f s) = %.2f Hz%s\n"
+                    gen_counter dt ((float gen_counter) /. dt)
+                    user_request_as_verbose_info;
+      Printf.printf "nap/total = (%.2f s)/(%.2f s) = %.2f%%\n%!"
+                    !napped dt
+                    (!napped /. dt *. 100.0);
+
+    end;
     display !m2 enlargement air;
     gen !m1 !m2 (choose_color color color_step) min_neighbours max_neighbours min_birth max_birth;
     swap m1 m2;
-    let tz = t1 +. time_per_frame in
+    let gen_counter' = succ gen_counter in
+    let tz =
+      match timekeeping with
+      | `Local -> t1 +. time_per_frame
+      | `Global -> t0 +. (float gen_counter') *. time_per_frame
+      | _ -> assert false
+    in
     let ty = Sys.time () in
     let dt = tz -. ty in
     if dt > 0.0 then begin
       nap dt;
       napped := !napped +. dt
-    end
-  done;;
+    end;
+    run gen_counter'
+  in run 0;;
 
 let user_manual =
   Printf.sprintf "Use: %s [xdim] [ydim]\nUse: %s -help\n" Sys.argv.(0) Sys.argv.(0);;
@@ -183,6 +192,13 @@ let main () =
   let color_step = ref 8 in
   let framerate_limitator = ref None in
   let user_seed = ref None in
+  let timekeeping = ref `Local in
+  let local_is_default, global_is_default =
+    match !timekeeping with
+      | `Local -> " (default)", ""
+      | `Global -> "", " (default)"
+      | _ -> assert false
+  in
   (try
      Arg.parse
        [("-enl", Arg.Int (fun i -> enlargement := i), "enlargement");
@@ -209,6 +225,10 @@ let main () =
                       radius := 5), "set default parameters for maze");
         ("-verbose", Arg.Unit (fun () -> verbose := not !verbose), "flip verbose mode");
         ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "max framerate");
+        ("-glo", Arg.Unit (fun () -> timekeeping := `Global),
+         (Printf.sprintf "global timekeeping%s" global_is_default));
+        ("-loc", Arg.Unit (fun () -> timekeeping := `Local),
+         (Printf.sprintf "local timekeeping%s" local_is_default));
         ("-seed", Arg.Int (fun s -> user_seed := Some s), "random generator seed");
        ]
        (fun anon -> anons := int_of_string anon :: !anons)
@@ -233,6 +253,7 @@ let main () =
          !color_step
          !radius !init_probability
          !framerate_limitator
+         !timekeeping
   in
   match !anons with
   | [y; x] -> start x y
