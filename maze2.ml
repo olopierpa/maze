@@ -8,6 +8,8 @@ let artifex = "PETRVS·PAVLVS·NEPTVNENSIS·ME·FECIT·MMXVI";;
 
 let version = "2.4";;
 
+let need_to_work_around_minimize_bug = true;;
+
 let verbose = ref false;;
 
 open Graphics;;
@@ -43,9 +45,11 @@ let gen m1 m2 color min_neighbours max_neighbours min_birth max_birth =
         end else begin
             m2.(x).(y) <- white
         end;
-      end else if !k >= min_birth && !k <= max_birth then
-            m2.(x).(y) <- color
-      else m2.(x).(y) <-  white
+      end else if !k >= min_birth && !k <= max_birth then begin
+          m2.(x).(y) <- color
+      end else begin
+          m2.(x).(y) <-  white
+      end
     done
   done;;
   
@@ -99,9 +103,7 @@ let choose_color k color_step =
   let bounds = Array.make 3 color_step in
   (try incr_index bounds k
    with Exit -> color_init k);
-  let color0 = k.(0) * ss * 65536 +
-                 k.(1) * ss * 256 +
-                 k.(2) * ss in
+  let color0 = rgb (k.(0) * ss) (k.(1) * ss) (k.(2) * ss) in
   let color = if color0 = white then black
               else color0 in
   if !verbose then
@@ -116,7 +118,7 @@ let swap ref1 ref2 =
   let temp = !ref1 in
   ref1 := !ref2;
   ref2 := temp;;
-
+  
 let maze xdim ydim
          min_neighbours max_neighbours
          min_birth max_birth
@@ -134,25 +136,31 @@ let maze xdim ydim
   let m2 = ref (Array.make_matrix xdim ydim white) in
   init !m1 radius init_probability;
   let color = Array.make 3 0 in
-  let time_per_frame, user_request_as_verbose_info =
+  let time_per_frame, user_request_as_verbose_info, is_fps_requested =
     match framerate_limitator with
-    | None -> 0.0, ""
-    | Some fps -> 1.0 /. fps, (Printf.sprintf " (%.2f Hz requested)" fps)
+    | None -> 0.0, "", false
+    | Some fps -> 1.0 /. fps, (Printf.sprintf " (%.2f Hz requested)" fps), true
   in
   let napped = ref 0.0 in
   let t0 = Sys.time () in
   let rec run gen_counter =
     let t1 = Sys.time () in
+    if need_to_work_around_minimize_bug then begin
+      auto_synchronize false;
+      display_mode false;
+    end;
     synchronize ();
     if !verbose then begin
       let dt = t1 -. t0 in
       Printf.printf "gen/time = %d/(%.2f s) = %.2f Hz%s\n"
                     gen_counter dt ((float gen_counter) /. dt)
                     user_request_as_verbose_info;
-      Printf.printf "nap/total = (%.2f s)/(%.2f s) = %.2f%%\n%!"
-                    !napped dt
-                    (!napped /. dt *. 100.0);
-
+      if is_fps_requested then begin
+          Printf.printf "nap/total = (%.2f s)/(%.2f s) = %.2f%%\n"
+                        !napped dt
+                        (!napped /. dt *. 100.0)
+      end;
+      flush stdout;  
     end;
     display !m2 enlargement air;
     gen !m1 !m2 (choose_color color color_step) min_neighbours max_neighbours min_birth max_birth;
@@ -162,6 +170,7 @@ let maze xdim ydim
       match timekeeping with
       | `Local -> t1 +. time_per_frame
       | `Global -> t0 +. (float gen_counter') *. time_per_frame
+      | `Limited_global f -> max (t1 +. time_per_frame *. f) (t0 +. (float gen_counter') *. time_per_frame)
       | _ -> assert false
     in
     let ty = Sys.time () in
@@ -170,9 +179,9 @@ let maze xdim ydim
       nap dt;
       napped := !napped +. dt
     end;
-    run gen_counter'
+    run gen_counter' 
   in run 0;;
-
+  
 let user_manual =
   Printf.sprintf "Use: %s [xdim] [ydim]\nUse: %s -help\n" Sys.argv.(0) Sys.argv.(0);;
 
@@ -194,21 +203,19 @@ let main () =
   let color_step = ref 8 in
   let framerate_limitator = ref None in
   let user_seed = ref None in
-  let timekeeping = ref `Local in
-  let local_is_default, global_is_default =
+  let timekeeping = ref (`Limited_global 0.9) in
+  let local_is_default, global_is_default, limited_global_is_default =
     match !timekeeping with
-      | `Local -> " (default)", ""
-      | `Global -> "", " (default)"
+      | `Local -> " (default)", "", ""
+      | `Global -> "", " (default)", ""
+      | `Limited_global f -> "", "", Printf.sprintf " (default %.2f)" f
       | _ -> assert false
   in
   (try
      Arg.parse
-       [("-enl", Arg.Int (fun i -> enlargement := i), "enlargement");
+       [("----", Arg.Unit (fun () -> ()), "--------- USEFUL OPTIONS ------------");
+        ("-enl", Arg.Int (fun i -> enlargement := i), "enlargement");
         ("-step", Arg.Int (fun i -> color_step := i), "color step");
-        ("-min", Arg.Int (fun i -> min_neighbours := i), "min live neighbours for surviving");
-        ("-man", Arg.Int (fun i -> max_neighbours := i), "max live neighbours for surviving");
-        ("-mib", Arg.Int (fun i -> min_birth := i), "min live neighbours for birth");
-        ("-mab", Arg.Int (fun i -> max_birth := i), "max live neighbours for birth");
         ("-rad", Arg.Int (fun i -> radius := i), "radius of random initial square");
         ("-air", Arg.Int (fun i -> air := i), "empty space between cells");
         ("-prob", Arg.Float (fun x -> init_probability := x),
@@ -225,13 +232,20 @@ let main () =
                       min_birth := 3;
                       max_birth := 3;
                       radius := 5), "set default parameters for maze");
-        ("-verbose", Arg.Unit (fun () -> verbose := not !verbose), "flip verbose mode");
         ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "max framerate");
+        ("-seed", Arg.Int (fun s -> user_seed := Some s), "random generator seed");
+        ("----", Arg.Unit (fun () -> ()), "------ LESS USEFUL OPTIONS ----------");
+        ("-verbose", Arg.Unit (fun () -> verbose := not !verbose), "flip verbose mode");
+        ("-min", Arg.Int (fun i -> min_neighbours := i), "min live neighbours for surviving");
+        ("-man", Arg.Int (fun i -> max_neighbours := i), "max live neighbours for surviving");
+        ("-mib", Arg.Int (fun i -> min_birth := i), "min live neighbours for birth");
+        ("-mab", Arg.Int (fun i -> max_birth := i), "max live neighbours for birth");
         ("-glo", Arg.Unit (fun () -> timekeeping := `Global),
          (Printf.sprintf "global timekeeping%s" global_is_default));
         ("-loc", Arg.Unit (fun () -> timekeeping := `Local),
          (Printf.sprintf "local timekeeping%s" local_is_default));
-        ("-seed", Arg.Int (fun s -> user_seed := Some s), "random generator seed");
+        ("-lim", Arg.Float (fun f -> timekeeping := `Limited_global f),
+         (Printf.sprintf "limited global timekeeping%s" limited_global_is_default));
        ]
        (fun anon -> anons := int_of_string anon :: !anons)
        user_manual
