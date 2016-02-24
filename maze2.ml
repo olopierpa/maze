@@ -53,15 +53,19 @@ let gen m1 m2 color min_neighbours max_neighbours min_birth max_birth =
     done
   done;;
   
-let init m radius init_probability =
+let init m radius shape init_probability =
   let xdim = Array.length m in
   let ydim = Array.length m.(0) in
   let x0 = xdim / 2 in
   let y0 = ydim / 2 in
+  let radius2 = radius * radius in
   for x = max (x0 - radius) 0 to min (xdim - 1) (x0 + radius) do
     for y = max (y0 - radius) 0 to min (ydim - 1) (y0 + radius) do
-      if Random.float 1.0 < init_probability then
-        m.(x).(y) <- black
+      let dx = x - x0 in
+      let dy = y - y0 in
+      if shape = `Square || shape = `Circle && dx * dx + dy * dy <= radius2 then
+        if Random.float 1.0 < init_probability then
+          m.(x).(y) <- black
     done
   done;;
   
@@ -76,7 +80,7 @@ let display m enlargement air =
       fill_rect (x * enlargement) (y * enlargement) enlargement' enlargement'
     done
   done;;
-
+  
 let incr_index bounds array =
   let rec loop i =
     if i < 0 then
@@ -114,6 +118,12 @@ let choose_color k color_step =
 let nap s =
   ignore (Unix.select [] [] [] (max 0.0 s));;
   
+let handle_keyboard () =
+  if key_pressed () then begin
+    ignore (read_key ());
+    exit 0
+  end;;
+  
 let swap ref1 ref2 =
   let temp = !ref1 in
   ref1 := !ref2;
@@ -124,7 +134,7 @@ let maze xdim ydim
          min_birth max_birth
          enlargement air
          color_step
-         radius init_probability
+         radius shape init_probability
          framerate_limitator
          timekeeping =
   open_graph (Printf.sprintf " %dx%d" (xdim * enlargement + 20) (ydim * enlargement + 50));
@@ -134,7 +144,7 @@ let maze xdim ydim
   display_mode false;
   let m1 = ref (Array.make_matrix xdim ydim white) in
   let m2 = ref (Array.make_matrix xdim ydim white) in
-  init !m1 radius init_probability;
+  init !m1 radius shape init_probability;
   let color = Array.make 3 0 in
   let time_per_frame, user_request_as_verbose_info, is_fps_requested =
     match framerate_limitator with
@@ -162,6 +172,7 @@ let maze xdim ydim
       end;
       flush stdout;  
     end;
+    handle_keyboard ();
     display !m2 enlargement air;
     gen !m1 !m2 (choose_color color color_step) min_neighbours max_neighbours min_birth max_birth;
     swap m1 m2;
@@ -184,12 +195,12 @@ let maze xdim ydim
   
 let user_manual =
   Printf.sprintf "Use: %s [xdim] [ydim]\nUse: %s -help\n" Sys.argv.(0) Sys.argv.(0);;
-
+  
 let print_user_manual_and_die () =
   print_endline user_manual;
   if not !Sys.interactive then
     exit 1;;
-
+  
 let main () =
   let anons = ref [] in
   let min_neighbours = ref 1 in
@@ -198,6 +209,7 @@ let main () =
   let max_birth = ref 3 in
   let radius = ref 5 in
   let init_probability = ref 0.5 in
+  let init_shape = ref `Square in
   let air = ref 1 in
   let enlargement = ref 4 in
   let color_step = ref 8 in
@@ -235,6 +247,8 @@ let main () =
         ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "max framerate");
         ("-seed", Arg.Int (fun s -> user_seed := Some s), "random generator seed");
         ("----", Arg.Unit (fun () -> ()), "------ LESS USEFUL OPTIONS ----------");
+        ("-circle", Arg.Unit (fun () -> init_shape := `Circle), "init area is circular");
+        ("-square", Arg.Unit (fun () -> init_shape := `Square), "init area is square");
         ("-verbose", Arg.Unit (fun () -> verbose := not !verbose), "flip verbose mode");
         ("-min", Arg.Int (fun i -> min_neighbours := i), "min live neighbours for surviving");
         ("-man", Arg.Int (fun i -> max_neighbours := i), "max live neighbours for surviving");
@@ -267,7 +281,7 @@ let main () =
          !min_birth !max_birth
          !enlargement !air
          !color_step
-         !radius !init_probability
+         !radius !init_shape !init_probability
          !framerate_limitator
          !timekeeping
   in
@@ -276,6 +290,6 @@ let main () =
   | [x] -> start x x
   | [] -> start 128 128
   | _ -> print_user_manual_and_die ();;
-
+  
 if not !Sys.interactive then
   main ();;
