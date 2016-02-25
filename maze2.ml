@@ -11,7 +11,9 @@ let version = "2.4";;
 let need_to_work_around_minimize_bug = true;;
 
 let verbose = ref false;;
-
+  
+let verbose_choose_color = ref false;;
+  
 open Graphics;;
 
 let wrap x y =
@@ -110,7 +112,7 @@ let choose_color k color_step =
   let color0 = rgb (k.(0) * ss) (k.(1) * ss) (k.(2) * ss) in
   let color = if color0 = white then black
               else color0 in
-  if !verbose then
+  if !verbose_choose_color then
     Printf.printf "choose_color: chosen = 0x%.6x (%d, %d, %d)\n"
                   color k.(0) k.(1) k.(2);
   color;;
@@ -129,35 +131,59 @@ let handle_keyboard () =
 module Stat : sig
   type t;;
   val make : unit -> t;;
+  val zero : t -> unit;;
   val add : t -> float -> unit;;
+  val number_of_samples : t -> float;;
   val mean : t -> float;;
+  val sample_variance : t -> float;;
+  val population_variance : t -> float;;
   val standard_deviation : t -> float;;
-  val get_n : t -> float;;
-  val get_sum : t -> float;;
-  val get_sum_of_squares : t -> float;;
+  val sample_standard_deviation : t -> float;;
+  val sum : t -> float;;
 end = struct
   
   type t = {
-      mutable n : float;
+      mutable k : float;
+      mutable a : float;
+      mutable q : float;
       mutable sum : float;
-      mutable sum_of_squares : float
     };;
     
-  let get_n { n } = n;;
-  let get_sum { sum } = sum;;
-  let get_sum_of_squares { sum_of_squares } = sum_of_squares;;
+  let make () =
+    { k = 0.0;
+      a = 0.0;
+      q = 0.0;
+      sum = 0.0
+    };;
     
-  let make () = { n = 0.0; sum = 0.0; sum_of_squares = 0.0 };;
+  let zero stat =
+    stat.k <- 0.0;
+    stat.a <- 0.0;
+    stat.q <- 0.0;
+    stat.sum <- 0.0;;
     
-  let add stat value = 
-    stat.n <- stat.n +. 1.0;
-    stat.sum <- stat.sum +. value;
-    stat.sum_of_squares <- stat.sum_of_squares +. value *. value;;
+  (* https://en.wikipedia.org/wiki/Standard_deviation#Rapid_calculation_methods *)
     
-  let mean { n; sum } = sum /. n;;
+  let add stat x = 
+    stat.k <- stat.k +. 1.0;
+    let a' = stat.a in
+    stat.a <- a' +. (x -. a') /. stat.k;
+    stat.q <- stat.q +. (x -. a') *. (x -. stat.a);
+    stat.sum <- stat.sum +. x;;
     
-  let standard_deviation { n; sum; sum_of_squares } =
-    sqrt (n *. sum_of_squares -. sum *. sum) /. n;;
+  let number_of_samples { k } = k;;
+    
+  let mean { a } = a;;
+    
+  let sample_variance { k; q } =  q /. (k -. 1.0);;
+    
+  let population_variance { k; q } = q /. k;;
+    
+  let standard_deviation stat = sqrt (population_variance stat);;
+    
+  let sample_standard_deviation stat = sqrt (sample_variance stat);;
+    
+  let sum { sum } = sum;;
     
 end;;
 
@@ -173,7 +199,8 @@ let maze xdim ydim
          color_step
          radius shape init_probability
          framerate_limitator
-         timekeeping =
+         timekeeping
+         inform_interval =
   open_graph (Printf.sprintf " %dx%d" (xdim * enlargement + 20) (ydim * enlargement + 50));
   set_window_title (Printf.sprintf "Maze %s" version);
   (* resize_window (xdim * enlargement) (ydim * enlargement); *)
@@ -190,6 +217,7 @@ let maze xdim ydim
   in
   let t0 = Sys.time () in
   let stat = Stat.make () in
+  let next_time_inform = ref 0.0 in
   let rec run gen_counter =
     let t1 = Sys.time () in
     if need_to_work_around_minimize_bug then begin
@@ -197,7 +225,8 @@ let maze xdim ydim
       display_mode false;
     end;
     synchronize ();
-    if !verbose then begin
+    if !verbose && t1 >= !next_time_inform then begin
+      next_time_inform := t1 +. inform_interval;
       let gen_counter_float = float gen_counter in
       let dt = t1 -. t0 in
       Printf.printf "gen/time = %d/(%.2f s) = %.2f Hz%s\n"
@@ -205,10 +234,10 @@ let maze xdim ydim
                     user_request_as_verbose_info;
       if is_fps_requested then begin
           Printf.printf "nap/total = (%.2f s)/(%.2f s) = %.2f%%\n"
-                        (Stat.get_sum stat)
+                        (Stat.sum stat)
                         dt
-                        (Stat.get_sum stat /. dt *. 100.0);
-          Printf.printf "nap/gen: mean = %.4f s; std = %.4f\n"
+                        (Stat.sum stat /. dt *. 100.0);
+          Printf.printf "nap/gen: mean = %.4f s; std = %.4f;\n"
                         (Stat.mean stat)
                         (Stat.standard_deviation stat)
         end;
@@ -228,10 +257,9 @@ let maze xdim ydim
     in
     let ty = Sys.time () in
     let dt = tz -. ty in
-    if dt > 0.0 then begin
-      nap dt;
-      Stat.add stat dt;
-    end;
+    let dt' = max 0.0 dt in
+    nap dt';
+    Stat.add stat dt';
     run gen_counter' 
   in run 0;;
   
@@ -258,6 +286,7 @@ let main () =
   let framerate_limitator = ref None in
   let user_seed = ref None in
   let timekeeping = ref (`Limited_global 0.7) in
+  let inform_interval = ref 1.0 in
   let local_is_default, global_is_default, limited_global_is_default =
     match !timekeeping with
       | `Local -> " (default)", "", ""
@@ -302,6 +331,7 @@ let main () =
          (Printf.sprintf "local timekeeping%s" local_is_default));
         ("-lim", Arg.Float (fun f -> timekeeping := `Limited_global f),
          (Printf.sprintf "limited global timekeeping%s" limited_global_is_default));
+        ("-iint", Arg.Float (fun f -> inform_interval := f), "verbose information interval");
        ]
        (fun anon -> anons := int_of_string anon :: !anons)
        user_manual
@@ -326,6 +356,7 @@ let main () =
          !radius !init_shape !init_probability
          !framerate_limitator
          !timekeeping
+         !inform_interval
   in
   match !anons with
   | [y; x] -> start x y
