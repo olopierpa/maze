@@ -120,10 +120,47 @@ let nap s =
   
 let handle_keyboard () =
   if key_pressed () then begin
-    ignore (read_key ());
+    while key_pressed () do
+      ignore (read_key ())
+    done;
     exit 0
   end;;
   
+module Stat : sig
+  type t;;
+  val make : unit -> t;;
+  val add : t -> float -> unit;;
+  val mean : t -> float;;
+  val standard_deviation : t -> float;;
+  val get_n : t -> float;;
+  val get_sum : t -> float;;
+  val get_sum_of_squares : t -> float;;
+end = struct
+  
+  type t = {
+      mutable n : float;
+      mutable sum : float;
+      mutable sum_of_squares : float
+    };;
+    
+  let get_n { n } = n;;
+  let get_sum { sum } = sum;;
+  let get_sum_of_squares { sum_of_squares } = sum_of_squares;;
+    
+  let make () = { n = 0.0; sum = 0.0; sum_of_squares = 0.0 };;
+    
+  let add stat value = 
+    stat.n <- stat.n +. 1.0;
+    stat.sum <- stat.sum +. value;
+    stat.sum_of_squares <- stat.sum_of_squares +. value *. value;;
+    
+  let mean { n; sum } = sum /. n;;
+    
+  let standard_deviation { n; sum; sum_of_squares } =
+    sqrt (n *. sum_of_squares -. sum *. sum) /. n;;
+    
+end;;
+
 let swap ref1 ref2 =
   let temp = !ref1 in
   ref1 := !ref2;
@@ -151,8 +188,8 @@ let maze xdim ydim
     | None -> 0.0, "", false
     | Some fps -> 1.0 /. fps, (Printf.sprintf " (%.2f Hz requested)" fps), true
   in
-  let napped = ref 0.0 in
   let t0 = Sys.time () in
+  let stat = Stat.make () in
   let rec run gen_counter =
     let t1 = Sys.time () in
     if need_to_work_around_minimize_bug then begin
@@ -161,15 +198,20 @@ let maze xdim ydim
     end;
     synchronize ();
     if !verbose then begin
+      let gen_counter_float = float gen_counter in
       let dt = t1 -. t0 in
       Printf.printf "gen/time = %d/(%.2f s) = %.2f Hz%s\n"
-                    gen_counter dt ((float gen_counter) /. dt)
+                    gen_counter dt (gen_counter_float /. dt)
                     user_request_as_verbose_info;
       if is_fps_requested then begin
           Printf.printf "nap/total = (%.2f s)/(%.2f s) = %.2f%%\n"
-                        !napped dt
-                        (!napped /. dt *. 100.0)
-      end;
+                        (Stat.get_sum stat)
+                        dt
+                        (Stat.get_sum stat /. dt *. 100.0);
+          Printf.printf "nap/gen: mean = %.4f s; std = %.4f\n"
+                        (Stat.mean stat)
+                        (Stat.standard_deviation stat)
+        end;
       flush stdout;  
     end;
     handle_keyboard ();
@@ -188,7 +230,7 @@ let maze xdim ydim
     let dt = tz -. ty in
     if dt > 0.0 then begin
       nap dt;
-      napped := !napped +. dt
+      Stat.add stat dt;
     end;
     run gen_counter' 
   in run 0;;
@@ -215,7 +257,7 @@ let main () =
   let color_step = ref 8 in
   let framerate_limitator = ref None in
   let user_seed = ref None in
-  let timekeeping = ref (`Limited_global 0.9) in
+  let timekeeping = ref (`Limited_global 0.7) in
   let local_is_default, global_is_default, limited_global_is_default =
     match !timekeeping with
       | `Local -> " (default)", "", ""
