@@ -201,7 +201,11 @@ let maze xdim ydim
          framerate_limitator
          timekeeping
          inform_interval =
-  open_graph (Printf.sprintf " %dx%d" (xdim * enlargement + 20) (ydim * enlargement + 50));
+  let xcrud, ycrud =
+    match Sys.os_type with
+    | "Win32" -> 20, 50
+    | _ -> 0, 0 in
+  open_graph (Printf.sprintf " %dx%d" (xdim * enlargement + xcrud) (ydim * enlargement + ycrud));
   set_window_title (Printf.sprintf "Maze %s" version);
   (* resize_window (xdim * enlargement) (ydim * enlargement); *)
   auto_synchronize false;
