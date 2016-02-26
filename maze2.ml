@@ -8,7 +8,7 @@ let artifex = "PETRVS·PAVLVS·NEPTVNENSIS·ME·FECIT·MMXVI";;
 
 let version = "2.4";;
 
-let need_to_work_around_minimize_bug = true;;
+let need_to_work_around_minimize_bug = ref true;;
 
 let verbose = ref false;;
   
@@ -220,7 +220,7 @@ let maze xdim ydim
   let next_time_inform = ref 0.0 in
   let rec run gen_counter =
     let t1 = Sys.time () in
-    if need_to_work_around_minimize_bug then begin
+    if !need_to_work_around_minimize_bug then begin
       auto_synchronize false;
       display_mode false;
     end;
@@ -332,6 +332,11 @@ let main () =
         ("-lim", Arg.Float (fun f -> timekeeping := `Limited_global f),
          (Printf.sprintf "limited global timekeeping%s" limited_global_is_default));
         ("-iint", Arg.Float (fun f -> inform_interval := f), "verbose information interval");
+        ("-wamb", Arg.Unit
+                    (fun f ->
+                      need_to_work_around_minimize_bug := not !need_to_work_around_minimize_bug),
+         (Printf.sprintf "toggle work around minimize bug (default = %b)"
+                         !need_to_work_around_minimize_bug));
        ]
        (fun anon -> anons := int_of_string anon :: !anons)
        user_manual
