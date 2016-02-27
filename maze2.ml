@@ -5,17 +5,17 @@
  *)
 
 let artifex = "PETRVS·PAVLVS·NEPTVNENSIS·ME·FECIT·MMXVI";;
-
+  
 let version = "2.4";;
-
+  
 let need_to_work_around_minimize_bug = ref true;;
-
+  
 let verbose = ref false;;
   
 let verbose_choose_color = ref false;;
   
 open Graphics;;
-
+  
 let wrap x y =
   if x < 0 then x + y
   else if x >= y then x - y
@@ -192,6 +192,16 @@ let swap ref1 ref2 =
   ref1 := !ref2;
   ref2 := temp;;
   
+let better_open_graph xdim ydim =
+  (* Workaround for Graphics incompatibilities between different OSes. *)
+  let xcrud, ycrud = 
+    match Sys.os_type with
+    | "Win32" -> 20, 50 (* Observational *)
+    | _ -> 0, 0 in
+  open_graph (Printf.sprintf " %dx%d" (xdim + xcrud) (ydim + ycrud))
+  (* /Workaround *)
+  ;;
+    
 let maze xdim ydim
          min_neighbours max_neighbours
          min_birth max_birth
@@ -201,12 +211,9 @@ let maze xdim ydim
          framerate_limitator
          timekeeping
          inform_interval =
-  let xcrud, ycrud =
-    match Sys.os_type with
-    | "Win32" -> 20, 50
-    | _ -> 0, 0 in
-  open_graph (Printf.sprintf " %dx%d" (xdim * enlargement + xcrud) (ydim * enlargement + ycrud));
+  better_open_graph (xdim * enlargement) (ydim * enlargement);
   set_window_title (Printf.sprintf "Maze %s" version);
+  (* does not work on Windows *)
   (* resize_window (xdim * enlargement) (ydim * enlargement); *)
   auto_synchronize false;
   display_mode false;
