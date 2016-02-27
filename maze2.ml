@@ -303,51 +303,52 @@ let main () =
     match !timekeeping with
       | `Local -> " (default)", "", ""
       | `Global -> "", " (default)", ""
-      | `Limited_global f -> "", "", Printf.sprintf " (default %.2f)" f
+      | `Limited_global f -> "", "", Printf.sprintf " (default, value = %.2f)" f
       | _ -> assert false
   in
   (try
      Arg.parse
-       [("----", Arg.Unit (fun () -> ()), "--------- USEFUL OPTIONS ------------");
-        ("-enl", Arg.Int (fun i -> enlargement := i), "enlargement");
-        ("-step", Arg.Int (fun i -> color_step := i), "color step");
-        ("-rad", Arg.Int (fun i -> radius := i), "radius of random initial square");
-        ("-air", Arg.Int (fun i -> air := i), "empty space between cells");
+       [("----", Arg.Unit (fun () -> ()), "-------\t-- USEFUL OPTIONS ------------");
+        ("-enl", Arg.Int (fun i -> enlargement := i), "<int>\tenlargement");
+        ("-step", Arg.Int (fun i -> color_step := i), "<int>\tcolor step");
+        ("-rad", Arg.Int (fun i -> radius := i), "<int>\tradius of random initial square");
+        ("-air", Arg.Int (fun i -> air := i), "<int>\tempty space between cells");
         ("-prob", Arg.Float (fun x -> init_probability := x),
-         "probability of live cell in the initialized square");
+         "<float>\tprobability of live cell in the initialized square");
         ("-life", Arg.Unit (fun () ->
                       min_neighbours := 2;
                       max_neighbours := 3;
                       min_birth := 3;
                       max_birth := 3;
-                      radius := 99999999), "set default parameters for life");
+                      radius := 99999999), "\tset default parameters for life");
         ("-maze", Arg.Unit (fun () ->
                       min_neighbours := 1;
                       max_neighbours := 5;
                       min_birth := 3;
                       max_birth := 3;
-                      radius := 5), "set default parameters for maze");
-        ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "max framerate");
-        ("-seed", Arg.Int (fun s -> user_seed := Some s), "random generator seed");
-        ("----", Arg.Unit (fun () -> ()), "------ LESS USEFUL OPTIONS ----------");
-        ("-circle", Arg.Unit (fun () -> init_shape := `Circle), "init area is circular");
-        ("-square", Arg.Unit (fun () -> init_shape := `Square), "init area is square");
-        ("-verbose", Arg.Unit (fun () -> verbose := not !verbose), "flip verbose mode");
-        ("-min", Arg.Int (fun i -> min_neighbours := i), "min live neighbours for surviving");
-        ("-man", Arg.Int (fun i -> max_neighbours := i), "max live neighbours for surviving");
-        ("-mib", Arg.Int (fun i -> min_birth := i), "min live neighbours for birth");
-        ("-mab", Arg.Int (fun i -> max_birth := i), "max live neighbours for birth");
+                      radius := 5), "\tset default parameters for maze");
+        ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "<float>\tmax framerate");
+        ("-seed", Arg.Int (fun s -> user_seed := Some s), "<int>\trandom generator seed");
+        ("----", Arg.Unit (fun () -> ()), "-------\t-- LESS USEFUL OPTIONS -------");
+        ("-circle", Arg.Unit (fun () -> init_shape := `Circle), "\tinit area is circular");
+        ("-square", Arg.Unit (fun () -> init_shape := `Square), "\tinit area is square");
+        ("-verbose", Arg.Unit (fun () -> verbose := not !verbose),
+         (Printf.sprintf "\ttoggle verbose mode (default = %b)" !verbose));
+        ("-min", Arg.Int (fun i -> min_neighbours := i), "<int>\tmin live neighbours for surviving");
+        ("-man", Arg.Int (fun i -> max_neighbours := i), "<int>\tmax live neighbours for surviving");
+        ("-mib", Arg.Int (fun i -> min_birth := i), "<int>\tmin live neighbours for birth");
+        ("-mab", Arg.Int (fun i -> max_birth := i), "<int>\tmax live neighbours for birth");
         ("-glo", Arg.Unit (fun () -> timekeeping := `Global),
-         (Printf.sprintf "global timekeeping%s" global_is_default));
+         (Printf.sprintf "\tglobal timekeeping%s" global_is_default));
         ("-loc", Arg.Unit (fun () -> timekeeping := `Local),
-         (Printf.sprintf "local timekeeping%s" local_is_default));
+         (Printf.sprintf "\tlocal timekeeping%s" local_is_default));
         ("-lim", Arg.Float (fun f -> timekeeping := `Limited_global f),
-         (Printf.sprintf "limited global timekeeping%s" limited_global_is_default));
-        ("-iint", Arg.Float (fun f -> inform_interval := f), "verbose information interval");
+         (Printf.sprintf "\tlimited global timekeeping%s" limited_global_is_default));
+        ("-iint", Arg.Float (fun f -> inform_interval := f), "<float>\tverbose information interval");
         ("-wamb", Arg.Unit
                     (fun f ->
                       need_to_work_around_minimize_bug := not !need_to_work_around_minimize_bug),
-         (Printf.sprintf "toggle work around minimize bug (default = %b)"
+         (Printf.sprintf "\ttoggle work around minimize bug (default = %b)"
                          !need_to_work_around_minimize_bug));
        ]
        (fun anon -> anons := int_of_string anon :: !anons)
