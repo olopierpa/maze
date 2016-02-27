@@ -225,7 +225,7 @@ let maze xdim ydim
   let time_per_frame, user_request_as_verbose_info, is_fps_requested =
     match framerate_limitator with
     | None -> 0.0, "", false
-    | Some fps -> 1.0 /. fps, (Printf.sprintf " (%.2f Hz requested)" fps), true
+    | Some fps -> 1.0 /. fps, (Printf.sprintf " (%.2f_Hz requested)" fps), true
   in
   let t0 = Sys.time () in
   let stat = Stat.make () in
@@ -241,15 +241,15 @@ let maze xdim ydim
       next_time_inform := t1 +. inform_interval;
       let gen_counter_float = float gen_counter in
       let dt = t1 -. t0 in
-      Printf.printf "gen/time = %d/(%.2f s) = %.2f Hz%s\n"
+      Printf.printf "gen/time = %d/%.2f_s = %.2f_Hz%s\n"
                     gen_counter dt (gen_counter_float /. dt)
                     user_request_as_verbose_info;
       if is_fps_requested then begin
-          Printf.printf "nap/total = (%.2f s)/(%.2f s) = %.2f%%\n"
+          Printf.printf "nap/total = %.2f_s/%.2f_s = %.2f%%\n"
                         (Stat.sum stat)
                         dt
                         (Stat.sum stat /. dt *. 100.0);
-          Printf.printf "nap/gen: mean = %.4f s; std = %.4f;\n"
+          Printf.printf "nap/gen: mean = %.4f_s; std = %.4f;\n"
                         (Stat.mean stat)
                         (Stat.standard_deviation stat)
         end;
@@ -338,13 +338,15 @@ let main () =
         ("-man", Arg.Int (fun i -> max_neighbours := i), "<int>\tmax live neighbours for surviving");
         ("-mib", Arg.Int (fun i -> min_birth := i), "<int>\tmin live neighbours for birth");
         ("-mab", Arg.Int (fun i -> max_birth := i), "<int>\tmax live neighbours for birth");
-        ("-glo", Arg.Unit (fun () -> timekeeping := `Global),
+        ("-glob", Arg.Unit (fun () -> timekeeping := `Global),
          (Printf.sprintf "\tglobal timekeeping%s" global_is_default));
-        ("-loc", Arg.Unit (fun () -> timekeeping := `Local),
+        ("-locl", Arg.Unit (fun () -> timekeeping := `Local),
          (Printf.sprintf "\tlocal timekeeping%s" local_is_default));
-        ("-lim", Arg.Float (fun f -> timekeeping := `Limited_global f),
+        ("-glim", Arg.Float (fun f -> timekeeping := `Limited_global f),
          (Printf.sprintf "\tlimited global timekeeping%s" limited_global_is_default));
-        ("-iint", Arg.Float (fun f -> inform_interval := f), "<float>\tverbose information interval");
+        ("-iint", Arg.Float (fun f -> inform_interval := f),
+         (Printf.sprintf "<float>\tverbose information interval (default = %.2f_s)"
+                         !inform_interval));
         ("-wamb", Arg.Unit
                     (fun f ->
                       need_to_work_around_minimize_bug := not !need_to_work_around_minimize_bug),
