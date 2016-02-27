@@ -118,7 +118,8 @@ let choose_color k color_step =
   color;;
   
 let nap s =
-  ignore (Unix.select [] [] [] (max 0.0 s));;
+  if s > 0.0 then
+    ignore (Unix.select [] [] [] s);;
   
 let handle_keyboard () =
   if key_pressed () then begin
