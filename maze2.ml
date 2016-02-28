@@ -60,26 +60,30 @@ let init m radius shape init_probability =
   let ydim = Array.length m.(0) in
   let x0 = xdim / 2 in
   let y0 = ydim / 2 in
-  let radius2 = radius * radius in
-  for x = max (x0 - radius) 0 to min (xdim - 1) (x0 + radius) do
-    for y = max (y0 - radius) 0 to min (ydim - 1) (y0 + radius) do
-      let dx = x - x0 in
-      let dy = y - y0 in
-      if shape = `Square || shape = `Circle && dx * dx + dy * dy <= radius2 then
+  let radius2 = radius *. radius in
+  let xmin = int_of_float (floor (max (float x0 -. radius) 0.0)) in
+  let xmax = int_of_float (ceil (min (float xdim -. 1.0) (float x0 +. radius))) in
+  let ymin = int_of_float (floor (max (float y0 -. radius) 0.0)) in
+  let ymax = int_of_float (ceil (min (float ydim -. 1.0) (float y0 +. radius))) in
+  for x = xmin to xmax do
+    for y = ymin to ymax do
+      let dx = float (x - x0) in
+      let dy = float (y - y0) in
+      if shape = `Square || shape = `Circle && dx *. dx +. dy *. dy <= radius2 then
         if Random.float 1.0 < init_probability then
           m.(x).(y) <- black
     done
   done;;
   
-let display m enlargement air =
-  let enlargement' = enlargement - air in
+let display m magnification air =
+  let magnification' = magnification - air in
   let xmax = Array.length m - 1 in
   let ymax = Array.length m.(0) - 1 in
   for x = 0 to xmax do
     let col = m.(x) in
     for y = 0 to ymax do
       set_color col.(y);
-      fill_rect (x * enlargement) (y * enlargement) enlargement' enlargement'
+      fill_rect (x * magnification) (y * magnification) magnification' magnification'
     done
   done;;
   
@@ -187,7 +191,7 @@ end = struct
   let sum { sum } = sum;;
     
 end;;
-
+  
 let swap ref1 ref2 =
   let temp = !ref1 in
   ref1 := !ref2;
@@ -206,16 +210,16 @@ let better_open_graph xdim ydim =
 let maze xdim ydim
          min_neighbours max_neighbours
          min_birth max_birth
-         enlargement air
+         magnification air
          color_step
          radius shape init_probability
          framerate_limitator
          timekeeping
          inform_interval =
-  better_open_graph (xdim * enlargement) (ydim * enlargement);
+  better_open_graph (xdim * magnification) (ydim * magnification);
   set_window_title (Printf.sprintf "Maze %s" version);
   (* does not work on Windows *)
-  (* resize_window (xdim * enlargement) (ydim * enlargement); *)
+  (* resize_window (xdim * magnification) (ydim * magnification); *)
   auto_synchronize false;
   display_mode false;
   let m1 = ref (Array.make_matrix xdim ydim white) in
@@ -249,14 +253,14 @@ let maze xdim ydim
                         (Stat.sum stat)
                         dt
                         (Stat.sum stat /. dt *. 100.0);
-          Printf.printf "nap/gen: mean = %.4f_s; std = %.4f;\n"
+          Printf.printf "nap/gen: mean = %.4f_s; sd = %.4f;\n"
                         (Stat.mean stat)
                         (Stat.standard_deviation stat)
         end;
       flush stdout;  
     end;
     handle_keyboard ();
-    display !m2 enlargement air;
+    display !m2 magnification air;
     gen !m1 !m2 (choose_color color color_step) min_neighbours max_neighbours min_birth max_birth;
     swap m1 m2;
     let gen_counter' = succ gen_counter in
@@ -289,11 +293,11 @@ let main () =
   let max_neighbours = ref 5 in
   let min_birth = ref 3 in
   let max_birth = ref 3 in
-  let radius = ref 5 in
+  let radius = ref 5.0 in
   let init_probability = ref 0.5 in
   let init_shape = ref `Square in
   let air = ref 1 in
-  let enlargement = ref 4 in
+  let magnification = ref 4 in
   let color_step = ref 8 in
   let framerate_limitator = ref None in
   let user_seed = ref None in
@@ -309,9 +313,10 @@ let main () =
   (try
      Arg.parse
        [("----", Arg.Unit (fun () -> ()), "-------\t-- USEFUL OPTIONS ------------");
-        ("-enl", Arg.Int (fun i -> enlargement := i), "<int>\tenlargement");
+        ("-mag", Arg.Int (fun i -> magnification := i),
+         (Printf.sprintf "<int>\tmagnification, pixels x cell (default = %d)" !magnification));
         ("-step", Arg.Int (fun i -> color_step := i), "<int>\tcolor step");
-        ("-rad", Arg.Int (fun i -> radius := i), "<int>\tradius of random initial square");
+        ("-rad", Arg.Float (fun r -> radius := r), "<float>\tradius of random initial blot");
         ("-air", Arg.Int (fun i -> air := i), "<int>\tempty space between cells");
         ("-prob", Arg.Float (fun x -> init_probability := x),
          "<float>\tprobability of live cell in the initialized square");
@@ -320,13 +325,13 @@ let main () =
                       max_neighbours := 3;
                       min_birth := 3;
                       max_birth := 3;
-                      radius := 99999999), "\tset default parameters for life");
+                      radius := 1e20), "\tset default parameters for life");
         ("-maze", Arg.Unit (fun () ->
                       min_neighbours := 1;
                       max_neighbours := 5;
                       min_birth := 3;
                       max_birth := 3;
-                      radius := 5), "\tset default parameters for maze");
+                      radius := 5.0), "\tset default parameters for maze");
         ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "<float>\tmax framerate");
         ("-seed", Arg.Int (fun s -> user_seed := Some s), "<int>\trandom generator seed");
         ("----", Arg.Unit (fun () -> ()), "-------\t-- LESS USEFUL OPTIONS -------");
@@ -371,7 +376,7 @@ let main () =
     maze xdim ydim
          !min_neighbours !max_neighbours
          !min_birth !max_birth
-         !enlargement !air
+         !magnification !air
          !color_step
          !radius !init_shape !init_probability
          !framerate_limitator
