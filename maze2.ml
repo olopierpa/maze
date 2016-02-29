@@ -315,11 +315,16 @@ let main () =
        [("----", Arg.Unit (fun () -> ()), "-------\t-- USEFUL OPTIONS ------------");
         ("-mag", Arg.Int (fun i -> magnification := i),
          (Printf.sprintf "<int>\tmagnification, pixels x cell (default = %d)" !magnification));
-        ("-step", Arg.Int (fun i -> color_step := i), "<int>\tcolor step");
-        ("-rad", Arg.Float (fun r -> radius := r), "<float>\tradius of random initial blot");
-        ("-air", Arg.Int (fun i -> air := i), "<int>\tempty space between cells");
+        ("-air", Arg.Int (fun i -> air := i),
+         (Printf.sprintf "<int>\tempty pixels between cells (default = %d)" !air));
+        ("-step", Arg.Int (fun i -> color_step := i),
+         (Printf.sprintf "<int>\tcolor step (default = %d)" !color_step));
+        ("-rad", Arg.Float (fun r -> radius := r),
+         (Printf.sprintf "<float>\tradius of random initial blot (default = %.2f)" !radius));
         ("-prob", Arg.Float (fun x -> init_probability := x),
-         "<float>\tprobability of live cell in the initialized square");
+         (Printf.sprintf
+            "<float>\tprob of live cell in the initial blot (default = %.2f)"
+            !init_probability));
         ("-life", Arg.Unit (fun () ->
                       min_neighbours := 2;
                       max_neighbours := 3;
