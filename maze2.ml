@@ -253,7 +253,7 @@ let maze xdim ydim
                         (Stat.sum stat)
                         dt
                         (Stat.sum stat /. dt *. 100.0);
-          Printf.printf "nap/gen: mean = %.4f_s; sd = %.4f;\n"
+          Printf.printf "nap/gen: mean = %.4f_s; sd = %.4f_s;\n"
                         (Stat.mean stat)
                         (Stat.standard_deviation stat)
         end;
