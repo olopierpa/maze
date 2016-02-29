@@ -377,7 +377,7 @@ let main () =
         number
     in
     Random.init seed;
-    Printf.printf "-seed %d%!" seed;
+    Printf.printf "-seed %d\n%!" seed;
     maze xdim ydim
          !min_neighbours !max_neighbours
          !min_birth !max_birth
