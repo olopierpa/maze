@@ -136,7 +136,7 @@ let handle_keyboard () =
 module Stat : sig
   type t;;
   val make : unit -> t;;
-  val zero : t -> unit;;
+  val reset : t -> unit;;
   val add : t -> float -> unit;;
   val number_of_samples : t -> float;;
   val mean : t -> float;;
@@ -145,6 +145,11 @@ module Stat : sig
   val standard_deviation : t -> float;;
   val sample_standard_deviation : t -> float;;
   val sum : t -> float;;
+  val get_min : t -> float;;
+  val get_max : t -> float;;
+  val range : t -> float;;
+  val midrange : t -> float;;
+
 end = struct
   
   type t = {
@@ -152,20 +157,26 @@ end = struct
       mutable a : float;
       mutable q : float;
       mutable sum : float;
+      mutable min : float;
+      mutable max : float;
     };;
     
   let make () =
     { k = 0.0;
       a = 0.0;
       q = 0.0;
-      sum = 0.0
+      sum = 0.0;
+      min = infinity;
+      max = neg_infinity;
     };;
     
-  let zero stat =
+  let reset stat =
     stat.k <- 0.0;
     stat.a <- 0.0;
     stat.q <- 0.0;
-    stat.sum <- 0.0;;
+    stat.sum <- 0.0;
+    stat.min <- infinity;
+    stat.max <- neg_infinity;;
     
   (* https://en.wikipedia.org/wiki/Standard_deviation#Rapid_calculation_methods *)
     
@@ -174,7 +185,9 @@ end = struct
     let a' = stat.a in
     stat.a <- a' +. (x -. a') /. stat.k;
     stat.q <- stat.q +. (x -. a') *. (x -. stat.a);
-    stat.sum <- stat.sum +. x;;
+    stat.sum <- stat.sum +. x;
+    stat.min <- min stat.min x;
+    stat.max <- max stat.max x;;
     
   let number_of_samples { k } = k;;
     
@@ -189,6 +202,13 @@ end = struct
   let sample_standard_deviation stat = sqrt (sample_variance stat);;
     
   let sum { sum } = sum;;
+    
+  let get_min { min } = min;;
+  let get_max { max } = max;;
+    
+  let range { max; min } = max -. min;;
+    
+  let midrange { max; min } = min +. (max -. min) /. 2.0;;
     
 end;;
   
@@ -253,8 +273,10 @@ let maze xdim ydim
                         (Stat.sum stat)
                         dt
                         (Stat.sum stat /. dt *. 100.0);
-          Printf.printf "nap/gen: mean = %.4f_s; sd = %.4f_s;\n"
+          Printf.printf "nap/gen: min = %.4f_s; mean = %.4f_s; max = %.4f_s; sd = %.4f_s;\n"
+                        (Stat.get_min stat)
                         (Stat.mean stat)
+                        (Stat.get_max stat)
                         (Stat.standard_deviation stat)
         end;
       flush stdout;  
@@ -337,7 +359,7 @@ let main () =
                       min_birth := 3;
                       max_birth := 3;
                       radius := 5.0), "\tset default parameters for maze");
-        ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "<float>\tmax framerate");
+        ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "<float>\ttarget framerate");
         ("-seed", Arg.Int (fun s -> user_seed := Some s), "<int>\trandom generator seed");
         ("----", Arg.Unit (fun () -> ()), "-------\t-- LESS USEFUL OPTIONS -------");
         ("-circle", Arg.Unit (fun () -> init_shape := `Circle), "\tinit area is circular");
@@ -353,7 +375,7 @@ let main () =
         ("-locl", Arg.Unit (fun () -> timekeeping := `Local),
          (Printf.sprintf "\tlocal timekeeping%s" local_is_default));
         ("-glim", Arg.Float (fun f -> timekeeping := `Limited_global f),
-         (Printf.sprintf "\tlimited global timekeeping%s" limited_global_is_default));
+         (Printf.sprintf "<float>\tlimited global timekeeping%s" limited_global_is_default));
         ("-iint", Arg.Float (fun f -> inform_interval := f),
          (Printf.sprintf "<float>\tverbose information interval (default = %.2f_s)"
                          !inform_interval));
