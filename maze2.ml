@@ -43,14 +43,14 @@ let gen m1 m2 color min_neighbours max_neighbours min_birth max_birth =
       let color0 = m1.(x).(y) in
       if color0 <> white then begin
         if !k >= min_neighbours && !k <= max_neighbours then begin
-            m2.(x).(y) <- color0
+          m2.(x).(y) <- color0
         end else begin
-            m2.(x).(y) <- white
+          m2.(x).(y) <- white
         end;
       end else if !k >= min_birth && !k <= max_birth then begin
-          m2.(x).(y) <- color
+        m2.(x).(y) <- color
       end else begin
-          m2.(x).(y) <-  white
+        m2.(x).(y) <-  white
       end
     done
   done;;
@@ -76,14 +76,14 @@ let init m radius shape init_probability =
   done;;
   
 let display m magnification air =
-  let magnification' = magnification - air in
+  let cell_side = magnification - air in
   let xmax = Array.length m - 1 in
   let ymax = Array.length m.(0) - 1 in
   for x = 0 to xmax do
     let col = m.(x) in
     for y = 0 to ymax do
       set_color col.(y);
-      fill_rect (x * magnification) (y * magnification) magnification' magnification'
+      fill_rect (x * magnification) (y * magnification) cell_side cell_side
     done
   done;;
   
@@ -133,7 +133,7 @@ let handle_keyboard () =
     exit 0
   end;;
   
-module Stat : sig
+module SummaryStats : sig
   type t;;
   val make : unit -> t;;
   val reset : t -> unit;;
@@ -149,7 +149,7 @@ module Stat : sig
   val get_max : t -> float;;
   val range : t -> float;;
   val midrange : t -> float;;
-
+    
 end = struct
   
   type t = {
@@ -212,6 +212,8 @@ end = struct
     
 end;;
   
+module SS = SummaryStats;;
+  
 let swap ref1 ref2 =
   let temp = !ref1 in
   ref1 := !ref2;
@@ -249,35 +251,35 @@ let maze xdim ydim
   let time_per_frame, user_request_as_verbose_info, is_fps_requested =
     match framerate_limitator with
     | None -> 0.0, "", false
-    | Some fps -> 1.0 /. fps, (Printf.sprintf " (%.2f_Hz requested)" fps), true
+    | Some fps -> 1.0 /. fps, (Printf.sprintf " (target = %.2f_Hz);" fps), true
   in
   let t0 = Sys.time () in
-  let stat = Stat.make () in
+  let stat = SS.make () in
   let next_time_inform = ref 0.0 in
-  let rec run gen_counter =
+  let rec run () =
     let t1 = Sys.time () in
     if !need_to_work_around_minimize_bug then begin
       auto_synchronize false;
       display_mode false;
     end;
     synchronize ();
+    let gen_counter = SS.number_of_samples stat in
     if !verbose && t1 >= !next_time_inform then begin
       next_time_inform := t1 +. inform_interval;
-      let gen_counter_float = float gen_counter in
       let dt = t1 -. t0 in
-      Printf.printf "gen/time = %d/%.2f_s = %.2f_Hz%s\n"
-                    gen_counter dt (gen_counter_float /. dt)
+      Printf.printf "gen/time = %.0f/%.2f_s = %.2f_Hz%s\n"
+                    gen_counter dt (gen_counter /. dt)
                     user_request_as_verbose_info;
       if is_fps_requested then begin
           Printf.printf "nap/total = %.2f_s/%.2f_s = %.2f%%\n"
-                        (Stat.sum stat)
+                        (SS.sum stat)
                         dt
-                        (Stat.sum stat /. dt *. 100.0);
+                        (SS.sum stat /. dt *. 100.0);
           Printf.printf "nap/gen: min = %.4f_s; mean = %.4f_s; max = %.4f_s; sd = %.4f_s;\n"
-                        (Stat.get_min stat)
-                        (Stat.mean stat)
-                        (Stat.get_max stat)
-                        (Stat.standard_deviation stat)
+                        (SS.get_min stat)
+                        (SS.mean stat)
+                        (SS.get_max stat)
+                        (SS.standard_deviation stat)
         end;
       flush stdout;  
     end;
@@ -285,21 +287,21 @@ let maze xdim ydim
     display !m2 magnification air;
     gen !m1 !m2 (choose_color color color_step) min_neighbours max_neighbours min_birth max_birth;
     swap m1 m2;
-    let gen_counter' = succ gen_counter in
     let tz =
       match timekeeping with
       | `Local -> t1 +. time_per_frame
-      | `Global -> t0 +. (float gen_counter') *. time_per_frame
-      | `Limited_global f -> max (t1 +. time_per_frame *. f) (t0 +. (float gen_counter') *. time_per_frame)
+      | `Global -> t0 +.  (gen_counter +. 1.0) *. time_per_frame
+      | `Limited_global f -> max (t1 +. time_per_frame *. f)
+                                 (t0 +. (gen_counter +. 1.0) *. time_per_frame)
       | _ -> assert false
     in
     let ty = Sys.time () in
     let dt = tz -. ty in
     let dt' = max 0.0 dt in
     nap dt';
-    Stat.add stat dt';
-    run gen_counter' 
-  in run 0;;
+    SS.add stat dt';
+    run ()
+  in run ();;
   
 let user_manual =
   Printf.sprintf "Use: %s [xdim] [ydim]\nUse: %s -help\n" Sys.argv.(0) Sys.argv.(0);;
@@ -325,12 +327,12 @@ let main () =
   let user_seed = ref None in
   let timekeeping = ref (`Limited_global 0.7) in
   let inform_interval = ref 1.0 in
-  let local_is_default, global_is_default, limited_global_is_default =
+  let local_is_default = if !timekeeping = `Local then " (default)" else "" in
+  let global_is_default = if !timekeeping = `Global then " (default)" else "" in
+  let limited_global_is_default =
     match !timekeeping with
-      | `Local -> " (default)", "", ""
-      | `Global -> "", " (default)", ""
-      | `Limited_global f -> "", "", Printf.sprintf " (default, value = %.2f)" f
-      | _ -> assert false
+    | `Limited_global f -> Printf.sprintf " (default, value = %.2f)" f
+    | _ -> ""
   in
   (try
      Arg.parse
