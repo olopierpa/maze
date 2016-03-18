@@ -9,6 +9,23 @@ let artifex = "PETRVS·PAVLVS·NEPTVNENSIS·ME·FECIT·MMXVI";;
 let version = "2.4";;
   
 let need_to_work_around_minimize_bug = ref true;;
+let need_to_work_around_float_of_string_bugs = ref true;;
+let need_to_work_around_int_of_float_bug = ref true;;
+  
+let less_buggy_float_of_string s =
+  match s with
+  | "inf" -> infinity
+  | "-inf" -> neg_infinity
+  | "nan" -> nan
+  | _ -> float_of_string s;;
+  
+let less_buggy_int_of_float f =
+  let fallo () = failwith (Printf.sprintf "less_buggy_int_of_float: bad argument: %f" f) in
+  match classify_float f with
+  | FP_infinite | FP_nan -> fallo ()
+  | _ -> if f < float(min_int) then fallo ()
+         else if f > float(max_int) then fallo ()
+         else int_of_float f;;
   
 let verbose = ref false;;
   
@@ -21,7 +38,7 @@ let wrap x y =
   else if x >= y then x - y
   else x;;
   
-let gen m1 m2 color min_neighbours max_neighbours min_birth max_birth =
+let gen m1 m2 color neighbours_for_surviving neighbours_for_birth =
   let xdim = Array.length m1 in
   let ydim = Array.length m1.(0) in
   let xmax = xdim - 1 in
@@ -40,14 +57,15 @@ let gen m1 m2 color min_neighbours max_neighbours min_birth max_birth =
               incr k
         done
       done;
+      let bit_k = 1 lsl !k in
       let color0 = m1.(x).(y) in
       if color0 <> white then begin
-        if !k >= min_neighbours && !k <= max_neighbours then begin
+        if bit_k land neighbours_for_surviving <> 0 then begin
           m2.(x).(y) <- color0
         end else begin
           m2.(x).(y) <- white
         end;
-      end else if !k >= min_birth && !k <= max_birth then begin
+      end else if bit_k land neighbours_for_birth <> 0 then begin
         m2.(x).(y) <- color
       end else begin
         m2.(x).(y) <-  white
@@ -61,9 +79,9 @@ let init m radius shape init_probability =
   let x0 = xdim / 2 in
   let y0 = ydim / 2 in
   let radius2 = radius *. radius in
-  let xmin = int_of_float (floor (max (float x0 -. radius) 0.0)) in
-  let xmax = int_of_float (ceil (min (float xdim -. 1.0) (float x0 +. radius))) in
-  let ymin = int_of_float (floor (max (float y0 -. radius) 0.0)) in
+  let xmin = less_buggy_int_of_float (floor (max (float x0 -. radius) 0.0)) in
+  let xmax = less_buggy_int_of_float (ceil (min (float xdim -. 1.0) (float x0 +. radius))) in
+  let ymin = less_buggy_int_of_float (floor (max (float y0 -. radius) 0.0)) in
   let ymax = int_of_float (ceil (min (float ydim -. 1.0) (float y0 +. radius))) in
   for x = xmin to xmax do
     for y = ymin to ymax do
@@ -133,6 +151,40 @@ let handle_keyboard () =
     exit 0
   end;;
   
+module Kahan_summation : sig
+  type t;;
+  val acc : unit -> t;;
+  val add : t -> float -> unit;;
+  val get : t -> float;;
+  val reset : t -> unit;;
+    
+end = struct
+  (* https://en.wikipedia.org/wiki/Kahan_summation_algorithm *)
+  type t = { mutable sum : float;
+             mutable c : float (* A running compensation for lost low-order bits. *)
+           };;
+    
+  let acc () = { sum = 0.0;
+                 c = 0.0 (* So far, so good: c is zero. *)
+               };;
+    
+  let add ({ sum; c } as k) addend =
+    let y = addend -. c in
+    let t = sum +. y in	(* Alas, sum is big, y small, so low-order digits of y are lost. *)
+    k.c <- (t -. sum) -. y; (* (t - sum) cancels the high-order part of y; subtracting y recovers negative (low part of y) *)
+    k.sum <- t (* Algebraically, c should always be zero. Beware overly-aggressive optimizing compilers! *)
+  (* Next time around, the lost low part will be added to y in a fresh attempt. *)
+  ;;
+    
+  let get { sum } = sum;;
+    
+  let reset k =
+    k.sum <- 0.0;
+    k.c <- 0.0;;
+    
+end;;
+
+
 module SummaryStats : sig
   type t;;
   val make : unit -> t;;
@@ -152,56 +204,60 @@ module SummaryStats : sig
     
 end = struct
   
+  module KS = Kahan_summation;;
+    
   type t = {
-      mutable k : float;
-      mutable a : float;
-      mutable q : float;
-      mutable sum : float;
+      mutable n : float;
+      mutable mean : float;
+      mutable m2 : float;
+      mutable sum : KS.t;
       mutable min : float;
       mutable max : float;
     };;
     
   let make () =
-    { k = 0.0;
-      a = 0.0;
-      q = 0.0;
-      sum = 0.0;
+    { n = 0.0;
+      mean = 0.0;
+      m2 = 0.0;
+      sum = KS.acc ();
       min = infinity;
       max = neg_infinity;
     };;
     
   let reset stat =
-    stat.k <- 0.0;
-    stat.a <- 0.0;
-    stat.q <- 0.0;
-    stat.sum <- 0.0;
+    stat.n <- 0.0;
+    stat.mean <- 0.0;
+    stat.m2 <- 0.0;
+    KS.reset stat.sum;
     stat.min <- infinity;
     stat.max <- neg_infinity;;
     
-  (* https://en.wikipedia.org/wiki/Standard_deviation#Rapid_calculation_methods *)
+  (* https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Online_algorithm *)
     
-  let add stat x = 
-    stat.k <- stat.k +. 1.0;
-    let a' = stat.a in
-    stat.a <- a' +. (x -. a') /. stat.k;
-    stat.q <- stat.q +. (x -. a') *. (x -. stat.a);
-    stat.sum <- stat.sum +. x;
+  let add stat x =
+    (* variance *)
+    stat.n <- stat.n +. 1.0;
+    let delta = x -. stat.mean in
+    stat.mean <- stat.mean +. delta /. stat.n;
+    stat.m2 <- stat.m2 +. delta *. (x -. stat.mean);
+    (* other *)
+    KS.add stat.sum x;
     stat.min <- min stat.min x;
     stat.max <- max stat.max x;;
     
-  let number_of_samples { k } = k;;
+  let number_of_samples { n } = n;;
     
-  let mean { a } = a;;
+  let mean { mean } = mean;;
     
-  let sample_variance { k; q } =  q /. (k -. 1.0);;
+  let sample_variance { n; m2 } =  m2 /. (n -. 1.0);;
     
-  let population_variance { k; q } = q /. k;;
+  let population_variance { n; m2 } = m2 /. n;;
     
   let standard_deviation stat = sqrt (population_variance stat);;
     
   let sample_standard_deviation stat = sqrt (sample_variance stat);;
     
-  let sum { sum } = sum;;
+  let sum { sum } = KS.get sum;;
     
   let get_min { min } = min;;
   let get_max { max } = max;;
@@ -211,7 +267,7 @@ end = struct
   let midrange { max; min } = min +. (max -. min) /. 2.0;;
     
 end;;
-  
+
 module SS = SummaryStats;;
   
 let swap ref1 ref2 =
@@ -230,8 +286,7 @@ let better_open_graph xdim ydim =
   ;;
     
 let maze xdim ydim
-         min_neighbours max_neighbours
-         min_birth max_birth
+         neighbours_for_surviving neighbours_for_birth
          magnification air
          color_step
          radius shape init_probability
@@ -285,7 +340,7 @@ let maze xdim ydim
     end;
     handle_keyboard ();
     display !m2 magnification air;
-    gen !m1 !m2 (choose_color color color_step) min_neighbours max_neighbours min_birth max_birth;
+    gen !m1 !m2 (choose_color color color_step) neighbours_for_surviving neighbours_for_birth;
     swap m1 m2;
     let tz =
       match timekeeping with
@@ -303,6 +358,34 @@ let maze xdim ydim
     run ()
   in run ();;
   
+let split_at_char char string =
+  let len = String.length string in
+  let rec fa da i acc =
+    if i = len then
+      List.rev (String.sub string da (i - da) :: acc)
+    else if string.[i] = char then
+      fa (succ i) (succ i) (String.sub string da (i - da) :: acc)
+    else
+      fa da (succ i) acc
+  in fa 0 0 [];;
+  
+let string_list_to_bitmap_as_integer sl =
+  List.fold_left
+    (fun acc p -> acc + 1 lsl (int_of_string p))
+    0
+    sl;;
+  
+let decode_rule s =
+  match split_at_char '/' s with
+  | [p1; p2] ->
+     let p1s = split_at_char ',' p1 in
+     let p2s = split_at_char ',' p2 in
+     begin try Some (string_list_to_bitmap_as_integer p1s,
+                     string_list_to_bitmap_as_integer p2s)
+           with Failure _ -> None
+     end
+  | _ -> None;;
+  
 let user_manual =
   Printf.sprintf "Use: %s [xdim] [ydim]\nUse: %s -help\n" Sys.argv.(0) Sys.argv.(0);;
   
@@ -313,10 +396,8 @@ let print_user_manual_and_die () =
   
 let main () =
   let anons = ref [] in
-  let min_neighbours = ref 1 in
-  let max_neighbours = ref 5 in
-  let min_birth = ref 3 in
-  let max_birth = ref 3 in
+  let neighbours_for_surviving = ref 0b111110 in
+  let neighbours_for_birth = ref 0b1000 in
   let radius = ref 5.0 in
   let init_probability = ref 0.5 in
   let init_shape = ref `Square in
@@ -343,24 +424,24 @@ let main () =
          (Printf.sprintf "<int>\tempty pixels between cells (default = %d)" !air));
         ("-step", Arg.Int (fun i -> color_step := i),
          (Printf.sprintf "<int>\tcolor step (default = %d)" !color_step));
-        ("-rad", Arg.Float (fun r -> radius := r),
+        ("-rad", Arg.String (fun s -> try radius := less_buggy_float_of_string s
+                                      with Failure _ ->
+                                        raise (Arg.Bad
+                                                 (Printf.sprintf
+                                                    "bad options: -rad %s" s))),
          (Printf.sprintf "<float>\tradius of random initial blot (default = %.2f)" !radius));
         ("-prob", Arg.Float (fun x -> init_probability := x),
          (Printf.sprintf
             "<float>\tprob of live cell in the initial blot (default = %.2f)"
             !init_probability));
         ("-life", Arg.Unit (fun () ->
-                      min_neighbours := 2;
-                      max_neighbours := 3;
-                      min_birth := 3;
-                      max_birth := 3;
-                      radius := 1e20), "\tset default parameters for life");
+                      neighbours_for_surviving := 0b1100;
+                      neighbours_for_birth := 0b1000;
+                      radius := 1e20), "\tsame as -rule 2,3/3 -radius inf");
         ("-maze", Arg.Unit (fun () ->
-                      min_neighbours := 1;
-                      max_neighbours := 5;
-                      min_birth := 3;
-                      max_birth := 3;
-                      radius := 5.0), "\tset default parameters for maze");
+                      neighbours_for_surviving := 0b111110;
+                      neighbours_for_birth := 0b1000;
+                      radius := 5.0), "\tsame as -rule 1,2,3,4,5/3 -radius 5.0");
         ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "<float>\ttarget framerate");
         ("-seed", Arg.Int (fun s -> user_seed := Some s), "<int>\trandom generator seed");
         ("----", Arg.Unit (fun () -> ()), "-------\t-- LESS USEFUL OPTIONS -------");
@@ -368,10 +449,12 @@ let main () =
         ("-square", Arg.Unit (fun () -> init_shape := `Square), "\tinit area is square");
         ("-verbose", Arg.Unit (fun () -> verbose := not !verbose),
          (Printf.sprintf "\ttoggle verbose mode (default = %b)" !verbose));
-        ("-min", Arg.Int (fun i -> min_neighbours := i), "<int>\tmin live neighbours for surviving");
-        ("-man", Arg.Int (fun i -> max_neighbours := i), "<int>\tmax live neighbours for surviving");
-        ("-mib", Arg.Int (fun i -> min_birth := i), "<int>\tmin live neighbours for birth");
-        ("-mab", Arg.Int (fun i -> max_birth := i), "<int>\tmax live neighbours for birth");
+        ("-rule", Arg.String (fun s -> match decode_rule s with
+                                       | None -> raise (Arg.Bad "bad rule")
+                                       | Some (surv, birth) ->
+                                          neighbours_for_surviving := surv;
+                                          neighbours_for_birth := birth),
+         "<str>\tS1,...,Sn/B1,...,Bm where the S are number of neighbours to survive, B are the numbers of neighbours for birth");
         ("-glob", Arg.Unit (fun () -> timekeeping := `Global),
          (Printf.sprintf "\tglobal timekeeping%s" global_is_default));
         ("-locl", Arg.Unit (fun () -> timekeeping := `Local),
@@ -384,8 +467,20 @@ let main () =
         ("-wamb", Arg.Unit
                     (fun f ->
                       need_to_work_around_minimize_bug := not !need_to_work_around_minimize_bug),
-         (Printf.sprintf "\ttoggle work around minimize bug (default = %b)"
+         (Printf.sprintf "\ttoggle work around for minimize bug (default = %b)"
                          !need_to_work_around_minimize_bug));
+        ("-wafos", Arg.Unit
+                     (fun f ->
+                       need_to_work_around_float_of_string_bugs :=
+                         not !need_to_work_around_float_of_string_bugs),
+         (Printf.sprintf "\ttoggle work around for bugs in float_of_string (default = %b)"
+                         !need_to_work_around_float_of_string_bugs));
+        ("-waiof", Arg.Unit
+                     (fun f ->
+                       need_to_work_around_int_of_float_bug :=
+                         not !need_to_work_around_int_of_float_bug),
+         (Printf.sprintf "\ttoggle work around for bugs in int_of_float (default = %b)"
+                         !need_to_work_around_int_of_float_bug));
        ]
        (fun anon -> anons := int_of_string anon :: !anons)
        user_manual
@@ -403,8 +498,8 @@ let main () =
     Random.init seed;
     Printf.printf "-seed %d\n%!" seed;
     maze xdim ydim
-         !min_neighbours !max_neighbours
-         !min_birth !max_birth
+         !neighbours_for_surviving
+         !neighbours_for_birth
          !magnification !air
          !color_step
          !radius !init_shape !init_probability
