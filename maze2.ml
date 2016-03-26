@@ -6,7 +6,7 @@
 
 let artifex = "PETRVS·PAVLVS·NEPTVNENSIS·ME·FECIT·MMXVI";;
   
-let version = "2.4";;
+let version = "2.5";;
   
 let need_to_work_around_minimize_bug = ref true;;
 let need_to_work_around_float_of_string_bugs = ref true;;
@@ -434,17 +434,101 @@ let main () =
          (Printf.sprintf
             "<float>\tprob of live cell in the initial blot (default = %.2f)"
             !init_probability));
-        ("-life", Arg.Unit (fun () ->
-                      neighbours_for_surviving := 0b1100;
-                      neighbours_for_birth := 0b1000;
-                      radius := 1e20), "\tsame as -rule 2,3/3 -radius inf");
-        ("-maze", Arg.Unit (fun () ->
-                      neighbours_for_surviving := 0b111110;
-                      neighbours_for_birth := 0b1000;
-                      radius := 5.0), "\tsame as -rule 1,2,3,4,5/3 -radius 5.0");
-        ("-fps", Arg.Float (fun s -> framerate_limitator := Some s), "<float>\ttarget framerate");
-        ("-seed", Arg.Int (fun s -> user_seed := Some s), "<int>\trandom generator seed");
+        
+        ("-fps", Arg.Float (fun s -> framerate_limitator := Some s),
+         "<float>\ttarget framerate");
+        
+        ("-seed", Arg.Int (fun s -> user_seed := Some s),
+         "<int>\trandom generator seed");
+        
+        ("----", Arg.Unit (fun () -> ()), "-------\t-- CANNED AUTOMATA -------");
+        
+        ("-life",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b1100;
+             neighbours_for_birth := 0b1000;
+             radius := infinity),
+         "\tsame as -rule 2,3/3 -rad inf");
+        
+        ("-maze",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b111110;
+             neighbours_for_birth := 0b1000;
+             radius := 5.0),
+         "\tsame as -rule 1,2,3,4,5/3 -rad 5.0");
+        
+        ("-mazectric",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b11110;
+             neighbours_for_birth := 0b1000;
+             radius := 5.0),
+         "\tsame as -rule 1,2,3,4/3 -rad 5.0");
+        
+        ("-lfod",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b1;
+             neighbours_for_birth := 0b100;
+             radius := 5.0),
+         "\t\"Live Free or Die\": same as -rule 0/2 -rad 5.0");
+        
+        ("-daynight",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b111001000;
+             neighbours_for_birth := 0b111011000;
+             radius := 30.0),
+         "\t\"Day & Night\": same as -rule 3,6,7,8/3,4,6,7,8 -rad 30.0");
+        
+        ("-highlife",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b1100;
+             neighbours_for_birth := 0b1001000;
+             radius := infinity),
+         "\tsame as -rule 2,3/3,6 -rad inf");
+        
+        ("-move",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b110100;
+             neighbours_for_birth := 0b101001000;
+             radius := infinity),
+         "\taka \"Morley\": same as -rule 2,4,5/3,6,8 -rad inf");
+        
+        ("-replicator",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b1010101010;
+             neighbours_for_birth := 0b1010101010;
+             radius := 2.0),
+         "\tsame as -rule 1,3,5,7,9/1,3,5,7,9 -rad 2.0");
+        
+        ("-replicator2",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b101010101;
+             neighbours_for_birth := 0b10101010;
+             radius := 2.0),
+         "\taka \"Fredkin\" same as -rule 0,2,4,6,8/1,3,5,7 -rad 2.0");
+        
+        ("-seeds",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b0;
+             neighbours_for_birth := 0b100;
+             radius := 5.0),
+         "\tsame as -rule /2 -rad 5.0");
+        
+        ("-gnarl",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b10;
+             neighbours_for_birth := 0b10;
+             radius := 5.0),
+         "\tsame as -rule 1/1 -rad 5.0");
+        
+        ("-lwod",
+         Arg.Unit (fun () ->
+             neighbours_for_surviving := 0b111111111;
+             neighbours_for_birth := 0b1000;
+             radius := 5.0),
+         "\t\"Life Without Death\": same as -rule 0,1,2,3,4,5,6,7,8/3 -rad 5.0");
+        
         ("----", Arg.Unit (fun () -> ()), "-------\t-- LESS USEFUL OPTIONS -------");
+        
         ("-circle", Arg.Unit (fun () -> init_shape := `Circle), "\tinit area is circular");
         ("-square", Arg.Unit (fun () -> init_shape := `Square), "\tinit area is square");
         ("-verbose", Arg.Unit (fun () -> verbose := not !verbose),
