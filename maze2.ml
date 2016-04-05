@@ -23,10 +23,10 @@ let less_buggy_int_of_float f =
   let fallo () = failwith (Printf.sprintf "less_buggy_int_of_float: bad argument: %f" f) in
   match classify_float f with
   | FP_infinite | FP_nan -> fallo ()
-  | _ -> if f < float(min_int) then fallo ()
-         else if f > float(max_int) then fallo ()
+  | _ -> if f < float min_int then fallo ()
+         else if f > float max_int then fallo ()
          else int_of_float f;;
-  
+
 let verbose = ref false;;
   
 let verbose_choose_color = ref false;;
@@ -247,7 +247,9 @@ end = struct
     
   let number_of_samples { n } = n;;
     
-  let mean { mean } = mean;;
+  let mean { n; mean } =
+    if n = 0.0 then nan
+    else mean;;
     
   let sample_variance { n; m2 } =  m2 /. (n -. 1.0);;
     
